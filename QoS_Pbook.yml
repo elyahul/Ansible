@@ -27,7 +27,7 @@
      - set_fact:
          iface: "{{prompt.user_input}}"
          
-     - name: View bandwidth variable
+     - name: View interface name
        debug:
          msg: "{{iface}}"
     
