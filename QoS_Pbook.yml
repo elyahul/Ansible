@@ -1,0 +1,34 @@
+--- 
+ - hosts: hub
+   tasks:
+   
+     - pause:       
+          prompt: "Please input Tunnel Bandwidth "
+          echo: yes
+       register: prompt
+ 
+     - set_fact:
+         bandwidth: "{{prompt.user_input}}"
+         deligate_to: "{{groups['cisco-ios']}}"
+         deligate_facts: true 
+
+     - name: View bandwidth variable
+       debug: 
+         msg: "{{bandwidth}}"
+         
+ - hosts: hub
+   tasks:
+
+     - pause:
+          prompt: "Please input Tunnel Interface to Configure "
+          echo: yes
+       register: prompt
+
+     - set_fact:
+         iface: "{{prompt.user_input}}"
+         
+     - name: View bandwidth variable
+       debug:
+         msg: "{{iface}}"
+    
+
