@@ -1,34 +1,174 @@
 --- 
- - hosts: hub
+ - name: Play1 
+   hosts:
+      - hub
+      - spoke2
+   vars:
+     hub_config: {}
+     parser_data: "{{ lookup('file', '/home/elil/Yml/ansible/{{ inventory_hostname }}_output.json') | from_json }}"     
+#     spoke_data: "{{ lookup('file', '/home/elil/Yml/ansible/spoke_config.json') | from_json }}" 
+  
    tasks:
-   
+
+#    - name: Check reachability
+#       ios_command:
+#         commands: "ping {{ansible_host}} repeat 1"
+#         wait_for: 
+#           - result[0] contains "Success rate is 100 percent" 
+              
      - pause:       
           prompt: "Please input Tunnel Bandwidth "
           echo: yes
-       register: prompt
- 
+       register: prompt1
+
      - set_fact:
-         bandwidth: "{{prompt.user_input}}"
+         bandwidth: "{{prompt1.user_input}}"
          deligate_to: "{{groups['cisco-ios']}}"
          deligate_facts: true 
+         no_log: true 
 
-     - name: View bandwidth variable
-       debug: 
-         msg: "{{bandwidth}}"
-         
- - hosts: hub
-   tasks:
+     - name: Check for correct input
+       assert:
+         that:
+           - "bandwidth  == '10' or bandwidth == '8'"
 
      - pause:
           prompt: "Please input Tunnel Interface to Configure "
           echo: yes
-       register: prompt
+       register: prompt2
 
      - set_fact:
-         iface: "{{prompt.user_input}}"
-         
-     - name: View bandwidth variable
-       debug:
-         msg: "{{iface}}"
-    
+         iface: "{{prompt2.user_input}}"
+         no_log: true  
 
+     - name: Check for correct input
+       assert:
+         that:
+           - "'Tunnel' in iface"
+                 
+     - name: Get Configuration
+       ios_command:
+         commands: 
+           - show run | section access-list
+           - show run interface {{iface}}
+           - show run policy-map | section {{bandwidth}}
+           - show run class-map
+         wait_for: 
+           - result[0] contains "permit"
+           - result[1] contains "end"
+           - result[2] contains "service"
+#          - result[3] contains "end"
+       register: Hub_Config
+     - debug: var=Hub_Config
+     
+     
+     - set_fact:
+         access_list: "{{Hub_Config.stdout_lines[0]}}"
+
+     - set_fact:
+         iface_list: "{{Hub_Config.stdout_lines[1][4::]}}"         
+
+     - set_fact:
+         qos_list: "{{Hub_Config.stdout_lines[2]}}"
+
+     - set_fact:
+         class_list: "{{Hub_Config.stdout_lines[3][4::]}}"
+    
+     - set_fact:
+        hub_config: "{{ hub_config | combine({item: access_list}) }}"
+       with_items: "Access_Config"
+
+     - set_fact:
+        hub_config: "{{ hub_config | combine({item: iface_list}) }}"
+       with_items: "Tunnel_Config"
+
+     - set_fact:
+        hub_config: "{{ hub_config | combine({item: qos_list}) }}"
+       with_items: "Qos_Config"
+     
+     - set_fact: 
+        hub_config: "{{ hub_config | combine({item: class_list}) }}"
+       with_items: "Class_Config"
+
+#     - debug: var=hub_config
+#     - include_vars:
+#         file: /home/elil/Yml/ansible/{{inventory_hostname}}_output.json
+#         name: variable
+
+     - name: Create Directory for Output File
+       file:
+         path: /home/elil/Yml/ansible/
+         state: directory
+         mode: 0755
+       run_once: true
+
+     - name: Copy output to file
+       copy:
+         content="{{hub_config | to_nice_json}}"
+         dest="/home/elil/Yml/ansible/{{inventory_hostname}}_output.json"
+#     - debug: var=parser_data
+
+     - name: Get Variables 
+       set_fact:
+         policy_map: "{{ parser_data | check_for_qos }}"
+         class_map: "{{ parser_data | delete_unwanted_class }}"
+     
+#     - debug: var=policy_map
+#     - debug: var=class_map
+
+     - name: Assert parsed variables
+       assert: 
+         that:
+           - "'parent' in policy_map.split()[1]"
+           - "class_map[0].split() | length == 3 "      
+#       when: class_map != "" or policy_map != ""
+
+ - name: Play2
+   hosts: 
+     - hub
+     - spoke2
+   vars:
+     parser_data: "{{ lookup('file', '/home/elil/Yml/ansible/hub_output.json') | from_json }}"
+     spoke_data: "{{ lookup('file', '/home/elil/Yml/ansible/spoke_config.json') | from_json }}"
+   
+   tasks:
+
+     - name: Store templates path into variable
+       set_fact:
+         jinja_path: "/etc/ansible/Templates/ansible-hub.j2"
+       run_once: true
+
+     - name: Apply new configuration to Hub
+       cli_config:
+         config: "{{ lookup('template', jinja_path) }}"
+#         save_when: changed
+       notify: config_changed
+       register: cli_result
+       run_once: true
+
+   handlers:
+     - name: Display changes
+       listen: config_changed
+       debug:
+         msg: "{{ cli_result }}" 
+ 
+     - name: Get Spoke Configuration
+       ios_command:
+         commands:
+           - show run | section access-list
+           - show run interface {{iface}}
+           - show run policy-map | section {{bandwidth}}
+           - show run class-map
+       
+         wait_for:
+           - result[0] contains "permit"
+           - result[1] contains "end"
+           - result[2] contains "service"
+       
+       register: Spoke_Config
+       when: inventory_hostname == 'spoke2'
+
+     - debug: var=Spoke_Config     
+      
+           
+    
