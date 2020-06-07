@@ -37,7 +37,7 @@
        with_items: "{{ inventory_hostname }}"  
        when: "waitfor['failed'] == true"
 
-     - debug: var=hostlist  
+#     - debug: var=hostlist  
    
      - name: Output for unreahable devices
        debug:
@@ -48,6 +48,7 @@
        pause:
           prompt: "Please input Tunnel Bandwidth "
           echo: yes
+       delegate_to: localhost       
        register: prompt1
        run_once: true
 
@@ -55,25 +56,27 @@
        set_fact:
          bandwidth: "{{prompt1.user_input}}"
          no_log: true
-       run_once: true
+       delegate_to: localhost
 
      - name: Check for correct Bandwidth input
        assert:
          that:
            - " bandwidth | int  in speeds "
-       run_once:  true
+       delegate_to: localhost
       
      - pause:
          prompt: "Please input Tunnel Interface to Configure "
          echo: yes
        register: prompt2
        run_once: true
+       delegate_to: localhost
 
      - name: Register "iface" variable
        set_fact:
          iface: "{{prompt2.user_input}}"
          no_log: true
        run_once: true
+       delegate_to: localhost
 
      - name: Check for correct Interface input
        assert:
