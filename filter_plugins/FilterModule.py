@@ -3,6 +3,14 @@
 import json
 import yaml
 
+'''
+This is a custom filters for Ansible.
+Can be used an any Playbook.  But cause they are parsing particular output primerily,
+they are used actually written for "Ansible-QoS" project.
+Attention: "@staticmethod" decorator usage is more convinient than regular"self" style.
+
+'''
+
 class FilterModule:
 
     ##    with open ('/home/elil/Yml/ansible/hub_output.json', 'r') as f:
