@@ -1,0 +1,164 @@
+
+#'''
+#This program allowes to apply QoS on remote nodes on every Vpn Network. 
+#Program checks if any QoS applied on Tunnel interface deletes unwanted 
+#QoS and applies wanted QoS. Program checks for reachability of nodes 
+#and returns list of unreachable nodes.
+
+#'''
+
+---
+ - name: Play1
+   hosts:
+      - hub
+      - spoke2
+   vars:
+     failed_hosts: []
+     speeds: [5,8,10,20,40]
+     parser_data: "{{ lookup('file', '/home/elil/Yml/ansible/{{ inventory_hostname }}_qos_cfg.json') | from_json }}"
+
+     
+   tasks:
+
+     - name: Check nodes reachability
+       wait_for:
+         port: 22
+         host: '{{ (ansible_ssh_host|default(ansible_host))|default(inventory_hostname) }}'
+         timeout: 10     
+       register: waitfor
+       retries: 0
+       ignore_errors: true 
+       no_log: True
+     
+     - name: Register unreachable hosts   
+       set_fact:  
+         hostlist: "{{ failed_hosts + [item] }}"
+         no_log: true
+       with_items: "{{ inventory_hostname }}"  
+       when: "waitfor['failed'] == true"
+
+     - debug: var=hostlist  
+   
+     - name: Output for unreahable devices
+       debug:
+         msg:  Device "{{ waitfor['msg'].split()[4][:-3] }}" is unreachable
+       when: "waitfor['failed'] == true "
+
+     - name: Input desiered bandwidth
+       pause:
+          prompt: "Please input Tunnel Bandwidth "
+          echo: yes
+       register: prompt1
+       run_once: true
+
+     - name: Register "Bandwidth" variable
+       set_fact:
+         bandwidth: "{{prompt1.user_input}}"
+         no_log: true
+       run_once: true
+
+     - name: Check for correct Bandwidth input
+       assert:
+         that:
+           - " bandwidth | int  in speeds "
+       run_once:  true
+      
+     - pause:
+         prompt: "Please input Tunnel Interface to Configure "
+         echo: yes
+       register: prompt2
+       run_once: true
+
+     - name: Register "iface" variable
+       set_fact:
+         iface: "{{prompt2.user_input}}"
+         no_log: true
+       run_once: true
+
+     - name: Check for correct Interface input
+       assert:
+         that:
+           - "'Tunnel' in iface "
+       run_once: true
+     
+     - block:
+
+         - name: "end play if hub unrachable"
+           debug:
+             msg: Will exit Playbook if node is unreachable
+         
+         - name: End playbook if conditions are met
+           meta: end_play
+           when: 
+             - (hostlist is defined and " 'hub' in hostlist ") or (hostlist is defined and " 'spoke' in hostlist ")
+           
+ 
+     - name: Get "Data" from Spoke Devices
+       when: inventory_hostname != 'spoke'
+       ios_command:
+         commands:
+           - 'show policy-map interface Tunnel1'
+       register: QoS_Config
+              
+#     - debug: var=Qos_Config
+
+     - name: Register "QoS_Config" "Data"
+       set_fact:
+         qos_config: "{{ QoS_Config.stdout_lines[0] }}" 
+    
+#     - debug: var=qos_config
+
+     - name: Create Directory for "Data" File
+       file:
+         path: /home/elil/Yml/ansible/
+         state: directory
+         mode: 0755
+       run_once: true
+
+     - name: Copy "Data" output into file
+       copy:
+         content="{{ qos_config | to_nice_json }}"
+         dest="/home/elil/Yml/ansible/{{ inventory_hostname }}_qos_cfg.json"
+
+#     - debug: var=parser_data
+
+     - name: Define parsed Lists as variables
+       when: inventory_hostname != 'hub'
+       set_fact:
+         bad_cfg: "{{ parser_data | cfg_to_erase }}"
+     
+#     - debug: var=bad_cfg[0]
+
+     - name: Store templates path into variable
+       set_fact:
+         jinja_path: "/etc/ansible/Templates/"
+  
+     - name: Delete unwanted configuration from spoke[s]
+       when: inventory_hostname != 'hub'
+       ios_config:
+         src: "/etc/ansible/Templates/Remove_Unwanted_Cfg.j2"
+       ignore_errors: yes
+       notify: config_changed
+       register: cli_result
+              
+     - name: Apply new configurations to spokes
+       when: inventory_hostname != 'hub'
+       ios_config:
+         src: "/etc/ansible/Templates/QoS_10m.j2"
+         save_when: changed
+       notify: config_applied
+       register: cli_notify
+  
+   handlers:
+
+     - name: Display changes on Devices
+       listen: config_changed
+       debug:
+         msg: "{{ cli_result.commands }}"
+
+     - name: Apply changes on Devices
+       listen: config_applied
+       debug:
+         msg: "{{ cli_notify.commands }}"
+
+    
