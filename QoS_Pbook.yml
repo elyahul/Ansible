@@ -38,6 +38,7 @@
        register: prompt2
 
      - set_fact:
+<<<<<<< HEAD
          iface: "{{prompt2.user_input}}"
          no_log: true  
 
@@ -73,6 +74,13 @@
 
      - set_fact:
          class_list: "{{Hub_Config.stdout_lines[3][4::]}}"
+=======
+         iface: "{{prompt.user_input}}"
+         
+     - name: View interface name
+       debug:
+         msg: "{{iface}}"
+>>>>>>> 84736361e747361a127f7c4d16d3780cce38ad85
     
      - set_fact:
         hub_config: "{{ hub_config | combine({item: access_list}) }}"
